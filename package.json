@@ -1,0 +1,27 @@
+{
+  "name": "downloader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "build/cjs/index.js",
+  "module": "build/esm/index.js",
+  "scripts": {
+    "dev": "ts-node ./index",
+    "build": "rm -rf build && tsc --project tsconfig-build-esm.json && tsc --project tsconfig-build-cjs.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gagaprince/downloader.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gagaprince/downloader/issues"
+  },
+  "homepage": "https://github.com/gagaprince/downloader#readme",
+  "dependencies": {
+    "axios": "^0.20.0",
+    "fs-extra": "^9.0.1",
+    "ts-node": "^9.0.0",
+    "typescript": "^4.0.3"
+  }
+}
