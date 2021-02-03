@@ -1,10 +1,10 @@
-import { TaskPool } from "./task/taskUtil";
+import { TaskPool, Task } from "./task/taskUtil";
 import { DownloadThreadTask } from "./DownloadThreadTask";
 
 const fse = require('fs-extra');
 export default class DownloadMoreThread {
     private downloadUrl: string; //目标地址
-    private pool: TaskPool;
+    private pool: TaskPool | null;
     private desFile: string; //目标地址
     private length: number; // 要下载的文件长度
     private step: number = 1024 * 1024; //每个分片 1M
@@ -14,7 +14,12 @@ export default class DownloadMoreThread {
         this.desFile = desFile;
         this.length = length;
         this.pool = new TaskPool(threadCount);
-        this.initTask();
+        this.pool.onProgress((progress: number) => {
+            console.log(`进度:${Math.floor(progress * 100)}%`)
+        });
+    }
+    public async start() {
+        await this.initTask();
     }
 
     private async initTask() {
@@ -27,6 +32,7 @@ export default class DownloadMoreThread {
     }
 
     private createFile() {
+        fse.removeSync(this.desFile);
         fse.ensureFileSync(this.desFile);
     }
 
@@ -38,12 +44,19 @@ export default class DownloadMoreThread {
             if (end >= this.length) {
                 end = this.length;
             }
-            this.pool.addTask(new DownloadThreadTask(this.downloadUrl, start, end, this.desFile));
+            this.pool?.addTask(new DownloadThreadTask(this.downloadUrl, start, end, this.desFile));
             degree = end;
         }
-        return new Promise((res) => {
-            this.pool.addFinishListener(res);
+        return new Promise((res, rej) => {
+            this.pool?.addFinishListener((tasks: Task[]) => {
+                const isFailed = tasks.some((task) => {
+                    return !task.taskIsSuccess;
+                });
+                isFailed ? rej("部分分片下载失败，请查看网络情况！") : res('');
+            });
         });
     }
-    private finish() { }
+    private finish() {
+        this.pool = null;
+    }
 }

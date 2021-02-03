@@ -13,8 +13,7 @@ interface IConnection {
 export abstract class Task {
     private taskStatus = TASK_STATUS.PENDING;
     private connection: IConnection | null = null;
-    private taskIsSuccess: boolean = false;
-    private tryTimes: number = 3;
+    public taskIsSuccess: boolean = false;
     excute() {
         this.donging();
 
@@ -23,7 +22,7 @@ export abstract class Task {
             taskHandle.then(() => {
                 this.taskIsSuccess = true;
             }).catch((error) => {
-                this.taskIsSuccess = true;
+                this.taskIsSuccess = false;
                 console.log(error);
             }).finally(() => {
                 this.done();
@@ -59,7 +58,9 @@ export class TaskPool implements IConnection {
 
     private taskList: Task[] = [];
     private doningList: Task[] = [];
+    private doneList: Task[] = [];
     private finishListeners: Function[] = [];
+    private progressListeners: Function[] = [];
     addTask(task: Task) {
         if (task.getStatus() === TASK_STATUS.PENDING) {
             this.taskList.push(task);
@@ -85,11 +86,15 @@ export class TaskPool implements IConnection {
                 // 任务完成
                 if (this.doningList.length === 0) {
                     console.log('任务完成');
+
                     this.finishListeners.forEach((lis) => {
                         if (lis) {
-                            lis();
+                            lis(this.doneList);
                         }
-                    })
+                    });
+                    this.doneList = [];
+                    this.finishListeners = [];
+                    this.progressListeners = [];
                 }
             }
         }
@@ -103,7 +108,22 @@ export class TaskPool implements IConnection {
                 return true;
             }
         });
+        this.doneList.push(task);
+        this.doProgress();
         this.excute();
+    }
+    doProgress() {
+        const doneLen = this.doneList.length;
+        const allLen = (doneLen + this.doningList.length) || 1;
+        const progress = doneLen / allLen;
+        this.progressListeners.forEach((listener) => {
+            if (listener) {
+                listener(progress);
+            }
+        });
+    }
+    onProgress(listener: Function) {
+        this.progressListeners.push(listener);
     }
     addFinishListener(listener: Function) {
         this.finishListeners.push(listener);

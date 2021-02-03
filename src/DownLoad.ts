@@ -40,8 +40,9 @@ export default class Download {
                 console.log('文件小于10M 直接单线程下载');
                 await this.downloadOneThread();
             } else { // 大于10M 多线程下载
+                console.log('文件大于10M 启用多线程下载');
                 inputStream.destroy();//先关闭当前流 开启多线程下载
-                new DownloadMoreThread(this.url, this.filePath, 10, length);
+                await new DownloadMoreThread(this.url, this.filePath, 10, length).start();
             }
         } catch (e) {
             console.log(e);
@@ -64,6 +65,14 @@ export default class Download {
 
         console.log('开始下载....');
         inputStream.pipe(writer);
+        const length = response.headers['content-length'] || 1;
+        let hasDownloadLength = 0;
+
+        const doProgress = (newLength: number) => {
+            hasDownloadLength += newLength;
+            const progress = hasDownloadLength / length;
+            // console.log(`进度:${Math.floor(progress * 100)}%`);
+        }
 
         const onError = async (resolve: any, reject: any) => {
             inputStream.destroy();
@@ -87,7 +96,7 @@ export default class Download {
                 console.log('超过10s没有新的数据产生，下载超时');
                 onError(resolve, reject);
             }, 10000);
-            writer.on('data', () => {
+            inputStream.on('data', (chunk: any) => {
                 if (timeoutHandle) {
                     clearTimeout(timeoutHandle);
                 }
@@ -95,6 +104,7 @@ export default class Download {
                     console.log('超过10s没有新的数据产生，下载超时');
                     onError(resolve, reject);
                 }, 10000);
+                doProgress(chunk.length);
             });
             writer.on('finish', (data: any) => {
                 if (timeoutHandle) {
