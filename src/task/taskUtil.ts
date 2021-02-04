@@ -85,8 +85,6 @@ export class TaskPool implements IConnection {
             } else {
                 // 任务完成
                 if (this.doningList.length === 0) {
-                    console.log('任务完成');
-
                     this.finishListeners.forEach((lis) => {
                         if (lis) {
                             lis(this.doneList);

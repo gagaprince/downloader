@@ -2,6 +2,15 @@ import { TaskPool, Task } from "./task/taskUtil";
 import { DownloadThreadTask } from "./DownloadThreadTask";
 
 const fse = require('fs-extra');
+
+export interface DownloadThreadOption {
+    downloadUrl: string;
+    desFile: string;
+    threadCount: number;
+    length: number;
+    onProgress?: (progress: number) => void;
+}
+
 export default class DownloadMoreThread {
     private downloadUrl: string; //目标地址
     private pool: TaskPool | null;
@@ -9,13 +18,16 @@ export default class DownloadMoreThread {
     private length: number; // 要下载的文件长度
     private step: number = 1024 * 1024; //每个分片 1M
 
-    public constructor(downloadUrl: string, desFile: string, threadCount: number, length: number) {
+    public constructor(opts: DownloadThreadOption) {
+        const { downloadUrl, desFile, threadCount, length, onProgress } = opts;
         this.downloadUrl = downloadUrl;
         this.desFile = desFile;
         this.length = length;
         this.pool = new TaskPool(threadCount);
         this.pool.onProgress((progress: number) => {
-            console.log(`进度:${Math.floor(progress * 100)}%`)
+            if (onProgress) {
+                onProgress(progress);
+            }
         });
     }
     public async start() {

@@ -16,7 +16,6 @@ export class DownloadThreadTask extends Task {
             const ret = await this.doTask();
             return ret;
         } catch (e) {
-            console.log(e);
             if (this.retry > 0) {
                 this.retry--;
                 return await this.task()

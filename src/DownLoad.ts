@@ -16,12 +16,16 @@ export default class Download {
     private url: string;
     private filePath: string;
     private onFailed: (error: string) => void = (error: string) => { console.log(error); };
+    private onProgress: ((progress: number) => void) | undefined;
+    private onSuccess: (() => void) | undefined;
     public constructor(opts: DownloadOptions) {
         const { url, filePath, retry, onProgress, onSuccess, onFailed } = opts;
         this.url = url;
         this.filePath = filePath;
         this.retry = retry || this.retry;
         this.onFailed = onFailed || this.onFailed;
+        this.onProgress = onProgress;
+        this.onSuccess = onSuccess;
     }
 
     public async start() {
@@ -36,19 +40,24 @@ export default class Download {
 
             const length = response.headers['content-length'] || 1;
             console.log(`${this.url} 文件长度:${this.getFileSize(length)}`);
-            if (length < 1024 * 1024 * 10) {//文件小于10M 单线程下载
+            if (length < 1024 * 1024 * 100) {//文件小于10M 单线程下载
                 console.log('文件小于10M 直接单线程下载');
                 await this.downloadOneThread();
             } else { // 大于10M 多线程下载
                 console.log('文件大于10M 启用多线程下载');
                 inputStream.destroy();//先关闭当前流 开启多线程下载
-                await new DownloadMoreThread(this.url, this.filePath, 10, length).start();
+                await new DownloadMoreThread({
+                    downloadUrl: this.url,
+                    desFile: this.filePath,
+                    threadCount: 10,
+                    length,
+                    onProgress: this.onProgress
+                }).start();
             }
         } catch (e) {
-            console.log(e);
-            console.log("请检查网络，确定下载地址是否正确");
             this.onFailed(e.toString());
         }
+        this.onSuccess && this.onSuccess();
     }
 
     private async downloadOneThread() {
@@ -62,8 +71,6 @@ export default class Download {
         });
         const inputStream = response.data;
 
-
-        console.log('开始下载....');
         inputStream.pipe(writer);
         const length = response.headers['content-length'] || 1;
         let hasDownloadLength = 0;
@@ -71,7 +78,7 @@ export default class Download {
         const doProgress = (newLength: number) => {
             hasDownloadLength += newLength;
             const progress = hasDownloadLength / length;
-            // console.log(`进度:${Math.floor(progress * 100)}%`);
+            this.onProgress && this.onProgress(progress);
         }
 
         const onError = async (resolve: any, reject: any) => {
@@ -110,7 +117,6 @@ export default class Download {
                 if (timeoutHandle) {
                     clearTimeout(timeoutHandle);
                 }
-                console.log(`${this.url} 下载完毕.... 输出目录: ${this.filePath}`);
                 resolve('');
             });
             writer.on('error', (e: any) => {
