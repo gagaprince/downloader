@@ -40,7 +40,7 @@ export default class Download {
 
             const length = response.headers['content-length'] || 1;
             console.log(`${this.url} 文件长度:${this.getFileSize(length)}`);
-            if (length < 1024 * 1024 * 100) {//文件小于10M 单线程下载
+            if (length < 1024 * 1024 * 10) {//文件小于10M 单线程下载
                 console.log('文件小于10M 直接单线程下载');
                 await this.downloadOneThread();
             } else { // 大于10M 多线程下载
