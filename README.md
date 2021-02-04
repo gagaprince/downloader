@@ -1,12 +1,12 @@
-# http-downloader
+# downloader-util
 
 # Install
 
-    npm install http-downloader
+    npm install downloader-util
 
 # Usage
 
-    import { download } from 'http-downloader';
+    import { download } from 'downloader-util';
     
     const mypath = path.resolve(__dirname, 'tmp/a.mp4');
     const url = 'http://vjs.zencdn.net/v/oceans.mp4';
