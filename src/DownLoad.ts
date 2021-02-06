@@ -58,9 +58,13 @@ export default class Download {
                 }).start();
             }
         } catch (e) {
-            this.onFailed(e.toString());
+            setTimeout(()=>{
+                this.onFailed(e.toString());
+            });
         }
-        this.onSuccess && this.onSuccess();
+        setTimeout(()=>{
+            this.onSuccess && this.onSuccess();
+        });
     }
 
     private async downloadOneThread() {
