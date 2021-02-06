@@ -6,6 +6,7 @@ export interface DownloadOptions {
     url: string;
     filePath: string;
     retry?: number;
+    timeout?:number;
     onProgress?: (progress: number) => void;
     onSuccess?: () => void;
     onFailed?: (error: string) => void;
@@ -15,14 +16,16 @@ export default class Download {
     private retry: number = 3;
     private url: string;
     private filePath: string;
+    private timeout: number;
     private onFailed: (error: string) => void = (error: string) => { console.log(error); };
     private onProgress: ((progress: number) => void) | undefined;
     private onSuccess: (() => void) | undefined;
     public constructor(opts: DownloadOptions) {
-        const { url, filePath, retry, onProgress, onSuccess, onFailed } = opts;
+        const { url, filePath, retry,timeout=5000, onProgress, onSuccess, onFailed } = opts;
         this.url = url;
         this.filePath = filePath;
         this.retry = retry || this.retry;
+        this.timeout = timeout;
         this.onFailed = onFailed || this.onFailed;
         this.onProgress = onProgress;
         this.onSuccess = onSuccess;
@@ -34,7 +37,7 @@ export default class Download {
                 url: this.url,
                 method: 'GET',
                 responseType: 'stream',
-                timeout: 5000,// responsType是stream 连接5s未响应就算超时
+                timeout: this.timeout,// responsType是stream 连接5s未响应就算超时
             });
             const inputStream = response.data;
 
@@ -67,7 +70,7 @@ export default class Download {
             url: this.url,
             method: 'GET',
             responseType: 'stream',
-            timeout: 5000,
+            timeout: this.timeout,
         });
         const inputStream = response.data;
 
@@ -94,7 +97,7 @@ export default class Download {
                     reject(e);
                 }
             } else {
-                reject('下载失败,重试3次');
+                reject(`下载失败,重试${this.retry}次`);
             }
         }
 
@@ -102,7 +105,7 @@ export default class Download {
             let timeoutHandle: any = setTimeout(() => {
                 console.log('超过10s没有新的数据产生，下载超时');
                 onError(resolve, reject);
-            }, 10000);
+            }, this.timeout);
             inputStream.on('data', (chunk: any) => {
                 if (timeoutHandle) {
                     clearTimeout(timeoutHandle);
@@ -110,7 +113,7 @@ export default class Download {
                 timeoutHandle = setTimeout(() => {
                     console.log('超过10s没有新的数据产生，下载超时');
                     onError(resolve, reject);
-                }, 10000);
+                }, this.timeout);
                 doProgress(chunk.length);
             });
             writer.on('finish', (data: any) => {
