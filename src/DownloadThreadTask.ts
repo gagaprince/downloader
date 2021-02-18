@@ -2,13 +2,19 @@ import { Task } from "./task/taskUtil";
 import axios from 'axios';
 const fs = require('fs');
 
+enum TASK_DOWNLOAD_STATUS {
+    START, STOP
+}
+
 export class DownloadThreadTask extends Task {
 
     public retry = 10;
+    private status: TASK_DOWNLOAD_STATUS;
+    inputStream: any;
 
     public constructor(private downloadUrl: string, private start: number, private end: number, private desFile: string) {
         super();
-
+        this.status = TASK_DOWNLOAD_STATUS.START;
     }
 
     async task(): Promise<any> {
@@ -16,6 +22,7 @@ export class DownloadThreadTask extends Task {
             const ret = await this.doTask();
             return ret;
         } catch (e) {
+            if (e === '用户手动停止，停止下载') throw e;
             if (this.retry > 0) {
                 this.retry--;
                 return await this.task()
@@ -25,13 +32,14 @@ export class DownloadThreadTask extends Task {
     }
 
     private async doTask() {
+        if (this.status !== TASK_DOWNLOAD_STATUS.START) return;
         const response = await axios({
             url: this.downloadUrl,
             method: 'GET',
             responseType: 'stream',
             headers: { 'Range': `bytes=${this.start}-${this.end}` }
         });
-        const inputStream = response.data;
+        const inputStream = this.inputStream = response.data;
         const length = response.headers['content-length'] || 1;
         // console.log(`分片:${this.start}-${this.end}`);
         // console.log('长度:' + length);
@@ -46,6 +54,11 @@ export class DownloadThreadTask extends Task {
             inputStream.on('data', (chunk: any) => {
                 if (timeoutHandle != null) {
                     clearTimeout(timeoutHandle);
+                }
+                if (this.status !== TASK_DOWNLOAD_STATUS.START) {
+                    inputStream.destroy();
+                    rej('用户手动停止，停止下载');
+                    return;
                 }
                 timeoutHandle = setTimeout(() => {
                     inputStream.destroy();
@@ -63,5 +76,9 @@ export class DownloadThreadTask extends Task {
             });
             inputStream.on('error', rej);
         });
+    }
+    stop() {
+        this.status = TASK_DOWNLOAD_STATUS.STOP;
+        this.inputStream?.destroy();
     }
 }
