@@ -17,6 +17,10 @@ export class DownloadThreadTask extends Task {
         this.status = TASK_DOWNLOAD_STATUS.START;
     }
 
+    getKey() {
+        return `${this.start}-${this.end}`;
+    }
+
     async task(): Promise<any> {
         try {
             const ret = await this.doTask();

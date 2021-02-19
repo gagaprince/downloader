@@ -58,10 +58,12 @@ export abstract class Task {
 export class TaskPool implements IConnection {
 
     private taskMaxNum: number;
+    private initTaskCount: number;
 
-    public constructor(taskMaxNum: number) {
+    public constructor(taskMaxNum: number, initTaskCount?: number) {
         this.taskMaxNum = taskMaxNum;
         this.status = TASK_POOL_STATUS.START;
+        this.initTaskCount = initTaskCount || 0;
     }
 
     private taskList: Task[] = [];
@@ -119,17 +121,17 @@ export class TaskPool implements IConnection {
             }
         });
         this.doneList.push(task);
-        this.doProgress();
+        this.doProgress(task);
         this.excute();
     }
-    doProgress() {
+    doProgress(task: Task) {
         if (this.status !== TASK_POOL_STATUS.START) return;
-        const doneLen = this.doneList.length;
+        const doneLen = this.doneList.length + this.initTaskCount;
         const allLen = (doneLen + this.doningList.length + this.taskList.length) || 1;
         const progress = doneLen / allLen;
         this.progressListeners.forEach((listener) => {
             if (listener) {
-                listener(progress);
+                listener(progress, task);
             }
         });
     }
@@ -143,6 +145,9 @@ export class TaskPool implements IConnection {
         this.taskList = [];
         this.doningList = [];
         this.doneList = [];
+    }
+    isEmpty() {
+        return this.doningList.length == 0;
     }
     stop() {
         this.status = TASK_POOL_STATUS.STOP;
