@@ -34,6 +34,10 @@ export default class DownloadMoreThread {
         await this.initTask();
     }
 
+    stop() {
+        this.pool?.stop();
+    }
+
     private async initTask() {
         // 创建一个文件
         this.createFile();

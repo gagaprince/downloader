@@ -1,17 +1,26 @@
 const fs = require('fs-extra');
 import axios from 'axios';
 import DownloadMoreThread from './DownloadMoreThread';
+import { getFileContent, saveJson } from './utils/fileutil';
 
 export interface DownloadOptions {
   url: string;
   filePath: string;
   retry?: number;
   timeout?: number;
-  threadCount?: number;
   type?: number;
   onProgress?: (progress: number) => void;
   onSuccess?: () => void;
   onFailed?: (error: string) => void;
+}
+
+interface DownloadConfig {
+  start: number;
+}
+
+enum DownloadState {
+  start = 0,
+  stop,
 }
 
 export default class Download {
@@ -19,34 +28,40 @@ export default class Download {
   private url: string;
   private filePath: string;
   private timeout: number;
-  private threadCount: number;
+  private type: number; //0根据文件大小确定多线程or单线程 1单线程 2多线程
+  private downloadState: DownloadState;
+  private length: number; //文件大小
   private onFailed: (error: string) => void = (error: string) => {
     console.log(error);
   };
   private onProgress: ((progress: number) => void) | undefined;
   private onSuccess: (() => void) | undefined;
+  private downloadMoreThread: DownloadMoreThread | undefined;
   public constructor(opts: DownloadOptions) {
     const {
       url,
       filePath,
       retry,
+      type = 0,
       timeout = 5000,
       onProgress,
       onSuccess,
       onFailed,
-      threadCount = 10,
     } = opts;
     this.url = url;
     this.filePath = filePath;
     this.retry = retry || this.retry;
     this.timeout = timeout;
+    this.type = type;
+    this.length = 0;
     this.onFailed = onFailed || this.onFailed;
     this.onProgress = onProgress;
     this.onSuccess = onSuccess;
-    this.threadCount = threadCount;
+    this.downloadState = DownloadState.stop;
   }
 
   public async start() {
+    this.downloadState = DownloadState.start;
     try {
       const response = await axios({
         url: this.url,
@@ -55,25 +70,42 @@ export default class Download {
         timeout: this.timeout, // responsType是stream 连接5s未响应就算超时
       });
       const inputStream = response.data;
+      if (this.downloadState !== DownloadState.start) {
+        inputStream.destroy();
+        return '';
+      }
 
-      const length = response.headers['content-length'] || 1;
+      const length = (this.length = response.headers['content-length'] || 1);
       console.log(`${this.url} 文件长度:${this.getFileSize(length)}`);
       inputStream.destroy();
-      if (length < 1024 * 1024 * 10) {
+      if (this.type === 0) {
+        if (length < 1024 * 1024 * 10) {
+          //文件小于10M 单线程下载
+          console.log('文件小于10M 直接单线程下载');
+          this.type = 1;
+        } else {
+          console.log('文件大于10M 启用多线程下载');
+          this.type = 2;
+        }
+      }
+      if (this.type === 1) {
         //文件小于10M 单线程下载
-        console.log('文件小于10M 直接单线程下载');
+        console.log('开始单线程下载');
         await this.downloadOneThread();
       } else {
         // 大于10M 多线程下载
-        console.log('文件大于10M 启用多线程下载');
         // inputStream.destroy();//先关闭当前流 开启多线程下载
-        await new DownloadMoreThread({
-          downloadUrl: this.url,
-          desFile: this.filePath,
-          threadCount: this.threadCount,
-          length,
-          onProgress: this.onProgress,
-        }).start();
+        console.log('开始多线程下载');
+        const downloadMoreThread = (this.downloadMoreThread = new DownloadMoreThread(
+          {
+            downloadUrl: this.url,
+            desFile: this.filePath,
+            threadCount: 10,
+            length,
+            onProgress: this.onProgress,
+          }
+        ));
+        await downloadMoreThread.start();
       }
     } catch (e) {
       setTimeout(() => {
@@ -82,34 +114,47 @@ export default class Download {
       return;
     }
     setTimeout(() => {
+      this.removeConfig(this.filePath);
       this.onSuccess && this.onSuccess();
     });
   }
 
   private async downloadOneThread() {
     this.mkFile(this.filePath);
-    const writer = fs.createWriteStream(this.filePath);
+    const config = this.getDownloadConfig(this.filePath);
+    let headers = {};
+    if (config.start == this.length) {
+      console.log('下载已完成!直接返回');
+      return '';
+    }
+    if (config.start != 0 && this.length !== 0) {
+      headers = { Range: `bytes=${config.start}-${this.length}` };
+    }
     const response = await axios({
       url: this.url,
       method: 'GET',
       responseType: 'stream',
       timeout: this.timeout,
+      headers,
     });
     const inputStream = response.data;
+    if (this.downloadState !== DownloadState.start) {
+      inputStream.destroy();
+      return '';
+    }
 
-    inputStream.pipe(writer);
+    // inputStream.pipe(writer);
     const length = response.headers['content-length'] || 1;
-    let hasDownloadLength = 0;
+    let hasDownloadLength = config.start;
 
     const doProgress = (newLength: number) => {
       hasDownloadLength += newLength;
-      const progress = hasDownloadLength / length;
+      const progress = hasDownloadLength / (+length + config.start);
       this.onProgress && this.onProgress(progress);
     };
 
     const onError = async (resolve: any, reject: any) => {
       inputStream.destroy();
-      writer.destroy();
       if (this.retry > 0) {
         this.retry--;
         fs.removeSync(this.filePath);
@@ -125,6 +170,8 @@ export default class Download {
     };
 
     return new Promise((resolve, reject) => {
+      const fd = fs.openSync(this.filePath, 'a');
+      let pos = config.start;
       let timeoutHandle: any = setTimeout(() => {
         console.log('超过10s没有新的数据产生，下载超时');
         onError(resolve, reject);
@@ -133,22 +180,37 @@ export default class Download {
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);
         }
+        if (this.downloadState !== DownloadState.start) {
+          inputStream.destroy();
+          reject('用户手动停止，停止下载');
+          return;
+        }
         timeoutHandle = setTimeout(() => {
           console.log('超过10s没有新的数据产生，下载超时');
           onError(resolve, reject);
         }, this.timeout);
+        fs.writeSync(fd, chunk, 0, chunk.length, pos);
+        pos += chunk.length;
+        this.saveConfig(this.filePath, pos);
         doProgress(chunk.length);
       });
-      writer.on('finish', (data: any) => {
+      inputStream.on('end', (data: any) => {
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);
         }
         resolve('');
       });
-      writer.on('error', (e: any) => {
+      inputStream.on('error', (e: any) => {
         onError(resolve, reject);
       });
     });
+  }
+
+  stop() {
+    this.downloadState = DownloadState.stop;
+    if (this.downloadMoreThread) {
+      this.downloadMoreThread.stop();
+    }
   }
 
   private getFileSize(length: number): string {
@@ -167,6 +229,26 @@ export default class Download {
   private mkFile(filePath: string) {
     const path = filePath.substr(0, filePath.lastIndexOf('/') + 1);
     fs.ensureDirSync(path);
+  }
+
+  private getDownloadConfig(filePath: string): DownloadConfig {
+    const configPath = `${filePath}.config`;
+    const content = getFileContent(configPath);
+    if (content) {
+      return JSON.parse(content);
+    }
+    return {
+      start: 0,
+    };
+  }
+
+  private saveConfig(filePath: string, pos: number) {
+    const configPath = `${filePath}.config`;
+    saveJson(configPath, { start: pos });
+  }
+  private removeConfig(filePath: string) {
+    const configPath = `${filePath}.config`;
+    fs.removeSync(configPath);
   }
 
   private downloadThreads() {}

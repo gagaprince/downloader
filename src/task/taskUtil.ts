@@ -4,8 +4,14 @@
 enum TASK_STATUS {
     PENDING,
     DONGING,
-    DONE,
+    DONE
 }
+
+enum TASK_POOL_STATUS {
+    START,
+    STOP
+}
+
 interface IConnection {
     disconnect: (task: Task) => void;
 }
@@ -33,6 +39,7 @@ export abstract class Task {
 
     }
     abstract task(): void | Promise<any>;
+    abstract stop(): void;
     setConnection(connection: IConnection) {
         this.connection = connection;
     }
@@ -54,6 +61,7 @@ export class TaskPool implements IConnection {
 
     public constructor(taskMaxNum: number) {
         this.taskMaxNum = taskMaxNum;
+        this.status = TASK_POOL_STATUS.START;
     }
 
     private taskList: Task[] = [];
@@ -61,7 +69,9 @@ export class TaskPool implements IConnection {
     private doneList: Task[] = [];
     private finishListeners: Function[] = [];
     private progressListeners: Function[] = [];
+    private status: TASK_POOL_STATUS;
     addTask(task: Task) {
+        if (this.status !== TASK_POOL_STATUS.START) return;
         if (task.getStatus() === TASK_STATUS.PENDING) {
             this.taskList.push(task);
         }
@@ -76,6 +86,7 @@ export class TaskPool implements IConnection {
         }
     }
     excute() {
+        if (this.status !== TASK_POOL_STATUS.START) return;
         if (this.doningList.length < this.taskMaxNum) {
             const task = this.taskList.shift();
             if (task && task.getStatus() !== TASK_STATUS.DONE) {
@@ -98,6 +109,7 @@ export class TaskPool implements IConnection {
         }
     }
     disconnect(task: Task) {
+        if (this.status !== TASK_POOL_STATUS.START) return;
         // 将任务从doningList中删除
         const doningList = this.doningList;
         doningList.find((taskItem, index) => {
@@ -111,6 +123,7 @@ export class TaskPool implements IConnection {
         this.excute();
     }
     doProgress() {
+        if (this.status !== TASK_POOL_STATUS.START) return;
         const doneLen = this.doneList.length;
         const allLen = (doneLen + this.doningList.length + this.taskList.length) || 1;
         const progress = doneLen / allLen;
@@ -125,5 +138,17 @@ export class TaskPool implements IConnection {
     }
     addFinishListener(listener: Function) {
         this.finishListeners.push(listener);
+    }
+    clear() {
+        this.taskList = [];
+        this.doningList = [];
+        this.doneList = [];
+    }
+    stop() {
+        this.status = TASK_POOL_STATUS.STOP;
+        this.doningList.forEach((task) => {
+            task.stop();
+        });
+        this.clear();
     }
 }
