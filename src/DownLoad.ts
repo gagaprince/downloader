@@ -214,9 +214,11 @@ export class DownLoad {
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);
         }
+        fs.closeSync(fd);
         resolve('');
       });
       inputStream.on('error', (e: any) => {
+        fs.closeSync(fd);
         onError(resolve, reject);
       });
     });
