@@ -1,4 +1,5 @@
 const fs = require('fs-extra');
+const path = require('path');
 import axios from 'axios';
 import DownloadMoreThread from './DownloadMoreThread';
 import { getFileContent, saveJson } from './utils/fileutil';
@@ -242,8 +243,8 @@ export class DownLoad {
   }
 
   private mkFile(filePath: string) {
-    const path = filePath.substr(0, filePath.lastIndexOf('/') + 1);
-    fs.ensureDirSync(path);
+    const pathDes = path.resolve(filePath, '../');
+    fs.ensureDirSync(pathDes);
   }
 
   private getDownloadConfig(filePath: string): DownloadConfig {
